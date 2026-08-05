@@ -1,0 +1,1081 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>netchat</title>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg-app:#0f1117;--bg-panel:#161926;--bg-input:#1e2130;--bg-hover:#252840;
+  --accent:#6c7cff;--accent-hi:#8b97ff;--accent-soft:#3d4699;
+  --text-hi:#e8eaf6;--text-md:#9fa3c8;--text-lo:#5a5f80;
+  --border:#2a2d42;--green:#3dd68c;--red:#f05252;
+  --radius:14px;--radius-sm:9px;
+  --font:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+}
+body{
+  font-family:var(--font);background:var(--bg-app);color:var(--text-hi);
+  min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;
+}
+.app{width:100%;max-width:900px;display:grid;grid-template-columns:260px 1fr;gap:16px}
+@media (max-width:720px){.app{grid-template-columns:1fr}}
+
+.panel{background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius);padding:18px;display:flex;flex-direction:column;gap:14px}
+
+h1{font-size:18px;font-weight:800;letter-spacing:-.02em}
+h2{font-size:13px;font-weight:700;color:var(--text-md);text-transform:uppercase;letter-spacing:.06em}
+
+.status-row{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--red)}
+.dot.on{background:var(--green)}
+.dot.pending{background:#ecc94b}
+
+.me-badge{display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg-input);border-radius:var(--radius-sm)}
+.me-swatch{width:28px;height:28px;border-radius:8px;flex:none}
+.me-name{font-weight:700;font-size:14px}
+.me-sub{font-size:11px;color:var(--text-lo)}
+
+button{font-family:inherit;cursor:pointer;border:none;border-radius:var(--radius-sm);font-weight:700;transition:background .15s}
+.btn-primary{background:var(--accent);color:#fff;padding:10px 14px;font-size:14px}
+.btn-primary:hover{background:var(--accent-hi)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed}
+.btn-ghost{background:var(--bg-input);color:var(--text-hi);padding:8px 12px;font-size:12.5px}
+.btn-ghost:hover{background:var(--bg-hover)}
+
+input[type=text]{
+  width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:10px 12px;color:var(--text-hi);font-size:13.5px;font-family:inherit;outline:none;
+}
+input[type=text]:focus{border-color:var(--accent)}
+
+select{
+  background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:9px;color:var(--text-hi);font-size:12.5px;font-family:inherit;outline:none;flex:1;
+}
+select:focus{border-color:var(--accent)}
+
+.field{display:flex;flex-direction:column;gap:6px}
+.id-box{display:flex;gap:6px;align-items:center}
+.id-box input{font-family:monospace;font-size:12px}
+
+.main{display:flex;flex-direction:column;gap:12px;height:560px}
+.log{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px}
+
+.msg{max-width:80%;padding:9px 13px;border-radius:14px;font-size:13.5px;line-height:1.4;word-wrap:break-word}
+.msg.from-calc{align-self:flex-start;background:var(--bg-input);border-bottom-left-radius:4px}
+.msg.from-peer{align-self:flex-start;background:var(--bg-input);border-bottom-left-radius:4px}
+.msg.sys{align-self:center;background:none;color:var(--text-lo);font-size:11.5px;font-style:italic}
+.msg .who{display:block;font-size:10.5px;font-weight:700;margin-bottom:2px;opacity:.85}
+
+.composer{display:flex;gap:8px}
+.composer input{flex:1}
+
+.hint{font-size:11px;color:var(--text-lo);line-height:1.5}
+
+.friend-row{display:flex;align-items:center;gap:8px;background:var(--bg-input);border-radius:var(--radius-sm);padding:7px 9px}
+.friend-row .fname{flex:1;font-size:12.5px;font-weight:600}
+.friend-row .fid{font-size:10.5px;color:var(--text-lo);font-family:monospace}
+.friend-row button{padding:5px 9px;font-size:11px}
+.friend-row .btn-remove{background:transparent;color:var(--text-lo)}
+.friend-row .btn-remove:hover{color:var(--red)}
+
+.typing-dots{display:flex;align-items:center;gap:3px;height:14px;padding-left:4px}
+.typing-dots span{width:5px;height:5px;border-radius:50%;background:var(--text-md);animation:bounce 1.2s infinite}
+.typing-dots span:nth-child(2){animation-delay:.15s}
+.typing-dots span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-4px);opacity:1}}
+
+.tabs{display:flex;gap:4px;margin-bottom:2px}
+.tab-btn{flex:1;background:var(--bg-input);color:var(--text-md);padding:9px;font-size:12.5px;border-radius:var(--radius-sm)}
+.tab-btn.active{background:var(--accent);color:#fff}
+
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:100}
+.modal-overlay.hidden{display:none}
+.modal-box{background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius);padding:22px;width:320px;display:flex;flex-direction:column;gap:12px}
+.modal-box h3{font-size:15px}
+.modal-box p{font-size:12.5px;color:var(--text-md);line-height:1.5}
+.modal-error{font-size:12px;color:var(--red);min-height:14px}
+.modal-actions{display:flex;gap:8px;margin-top:4px}
+.modal-actions button{flex:1}
+.modal-link{background:none;color:var(--accent);font-size:12px;text-align:center;padding:4px}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="panel">
+    <h1>netchat</h1>
+
+    <div>
+      <h2 style="margin-bottom:8px">Calculator</h2>
+      <div class="status-row"><span class="dot" id="calc-dot"></span><span id="calc-status">Not connected</span></div>
+      <button class="btn-primary" id="connect-calc" style="margin-top:10px;width:100%">Connect calculator</button>
+    </div>
+
+    <div>
+      <h2 style="margin-bottom:8px">Background image</h2>
+      <div class="field">
+        <label class="hint">Send a picture to the calc as a 320x240 background (quantized to the calc's colors). Pick it in calc Settings &gt; 8: Background image.</label>
+        <div class="id-box">
+          <select id="bg-slot"></select>
+          <button class="btn-ghost" id="bg-upload">Upload...</button>
+        </div>
+        <input type="file" id="bg-file" accept="image/*" style="display:none">
+        <p class="hint" id="bg-status"></p>
+      </div>
+    </div>
+
+    <div id="me-section" style="display:none">
+      <h2 style="margin-bottom:8px">You</h2>
+      <div class="me-badge">
+        <div class="me-swatch" id="me-swatch"></div>
+        <div>
+          <div class="me-name" id="me-name"></div>
+          <div class="me-sub">from calculator setup</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <h2 style="margin-bottom:8px">Direct message</h2>
+      <div class="status-row" style="margin-bottom:8px"><span class="dot" id="peer-dot"></span><span id="peer-status">Not connected</span></div>
+
+      <div class="field">
+        <label class="hint">Your ID (share this with a friend)</label>
+        <div class="id-box">
+          <input type="text" id="my-peer-id" readonly value="connecting...">
+          <button class="btn-ghost" id="copy-id">Copy</button>
+        </div>
+      </div>
+
+      <div class="field" style="margin-top:10px">
+        <label class="hint">Friend's ID</label>
+        <div class="id-box">
+          <input type="text" id="friend-id" placeholder="e.g. 7K2P9">
+          <button class="btn-ghost" id="connect-peer">Connect</button>
+        </div>
+      </div>
+
+      <div class="field" style="margin-top:10px">
+        <label class="hint">Save this friend</label>
+        <div class="id-box">
+          <input type="text" id="friend-name" placeholder="nickname">
+          <button class="btn-ghost" id="save-friend">Save</button>
+        </div>
+      </div>
+
+      <div id="friends-list" style="margin-top:10px;display:flex;flex-direction:column;gap:6px"></div>
+
+      <p class="hint" style="margin-top:8px">Messages relay: your calc &#8594; your browser &#8594; direct P2P link &#8594; their browser &#8594; their calc. No server sees the message content.</p>
+    </div>
+  </div>
+
+  <div class="panel main">
+    <div class="tabs">
+      <button class="tab-btn active" id="tab-dm">Direct Message</button>
+      <button class="tab-btn" id="tab-global">Global Chat</button>
+    </div>
+    <div class="log" id="log"></div>
+    <div class="typing-dots" id="typing-indicator" style="visibility:hidden"><span></span><span></span><span></span></div>
+    <div class="composer">
+      <input type="text" id="msg" placeholder="Type a message...">
+      <button class="btn-primary" id="send">Send</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="account-modal">
+  <div class="modal-box">
+    <h3 id="account-modal-title">Username taken</h3>
+    <p id="account-modal-body">That username is already claimed on another device. Enter its password to confirm it's you, or pick a different name.</p>
+    <input type="text" id="account-password" placeholder="Password" style="display:none">
+    <input type="text" id="account-new-username" placeholder="New username" style="display:none">
+    <p class="modal-error" id="account-modal-error"></p>
+    <div class="modal-actions" id="account-modal-actions">
+      <button class="btn-ghost" id="account-change-name">Change username</button>
+      <button class="btn-primary" id="account-confirm-password">Confirm password</button>
+    </div>
+    <button class="modal-link" id="account-back" style="display:none">&larr; Back</button>
+  </div>
+</div>
+
+<script>
+const VENDOR_ID = 0x0451;
+const PRODUCT_ID = 0xE008;
+const LINKLIB_KEY = "netcalc-chat-v1";
+
+// Temporary: username/password accounts are disabled because the accounts
+// table + service key aren't working yet. When this is false, the app just
+// uses whatever name the calculator sends -- no registration, no password
+// prompts. Flip back to true once registration works.
+const ACCOUNTS_ENABLED = true;
+
+let device = null, epIn = null, epOut = null;
+let calcConnected = false;
+let accountReady = false; /* calc attached AND the account has been confirmed */
+let recvBuffer = "";
+let myUsername = null, myColor = null;
+
+/* Background-image upload state. imagePalette is the calc's fixed 20-color
+ * image palette (from #PAL#), slotBusy mirrors the calc's BGIMG<n> vars
+ * (from #BGSLOTS#), and uploadActive pauses the composer while a transfer
+ * is in flight. */
+let imagePalette = null;
+let slotBusy = new Array(6).fill(false);
+let uploadActive = false;
+const BG_SLOTS = 6;
+const BG_CHUNK = 292; /* pixel bytes per #BGDATA# line; 8 + 292*2 hex = 592 chars */
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+let peer = null, conn = null;
+
+const logEl = document.getElementById('log');
+const calcDot = document.getElementById('calc-dot');
+const calcStatus = document.getElementById('calc-status');
+const peerDot = document.getElementById('peer-dot');
+const peerStatus = document.getElementById('peer-status');
+const meSection = document.getElementById('me-section');
+const meSwatch = document.getElementById('me-swatch');
+const meName = document.getElementById('me-name');
+const myPeerIdInput = document.getElementById('my-peer-id');
+
+function addMsg(who, text, cls) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + cls;
+  if (who) {
+    const whoEl = document.createElement('span');
+    whoEl.className = 'who';
+    whoEl.textContent = who;
+    if (cls === 'from-calc' && myColor) whoEl.style.color = '#' + myColor;
+    div.appendChild(whoEl);
+  }
+  div.appendChild(document.createTextNode(text));
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function sys(text) { addMsg(null, text, 'sys'); }
+
+/* ---------------- Accounts (username/password/device-token identity) ---------------- */
+
+async function accountRequest(action, payload) {
+  const r = await fetch(`/api/proxy?service=account&action=${action}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const data = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, data };
+}
+
+async function savePeerToAccount(username, token, peerId) {
+  try {
+    const r = await accountRequest('save-peer', { username, token, peer_id: peerId });
+    if (!r.ok) sys('(peer id not saved: ' + ((r.data && r.data.error) || r.status) + ')');
+  } catch (e) {
+    console.error('Failed to save peer id', e);
+  }
+}
+
+const modalEl = document.getElementById('account-modal');
+const modalTitle = document.getElementById('account-modal-title');
+const modalBody = document.getElementById('account-modal-body');
+const modalError = document.getElementById('account-modal-error');
+const passwordInput = document.getElementById('account-password');
+const newUsernameInput = document.getElementById('account-new-username');
+const changeNameBtn = document.getElementById('account-change-name');
+const confirmPasswordBtn = document.getElementById('account-confirm-password');
+const backBtn = document.getElementById('account-back');
+
+function showConflictModal(username) {
+  modalTitle.textContent = 'Username taken';
+  modalBody.textContent = `"${username}" is already claimed on another device. Enter its password to confirm it's you, or pick a different name.`;
+  modalError.textContent = '';
+  passwordInput.style.display = 'block';
+  passwordInput.value = '';
+  newUsernameInput.style.display = 'none';
+  changeNameBtn.style.display = 'block';
+  confirmPasswordBtn.style.display = 'block';
+  confirmPasswordBtn.textContent = 'Confirm password';
+  backBtn.style.display = 'none';
+  modalEl.classList.remove('hidden');
+  passwordInput.focus();
+}
+
+function showChangeNameModal() {
+  modalTitle.textContent = 'Pick a new username';
+  modalBody.textContent = 'This will be saved back to your calculator.';
+  modalError.textContent = '';
+  passwordInput.style.display = 'none';
+  newUsernameInput.style.display = 'block';
+  newUsernameInput.value = '';
+  changeNameBtn.style.display = 'none';
+  confirmPasswordBtn.style.display = 'block';
+  confirmPasswordBtn.textContent = 'Submit';
+  backBtn.style.display = 'block';
+  modalEl.classList.remove('hidden');
+  newUsernameInput.focus();
+}
+
+function hideAccountModal() {
+  modalEl.classList.add('hidden');
+}
+
+// Resolves once we have a confirmed {token, username} pair -- walks the
+// user through password confirmation or picking a new name as many times
+// as it takes (recurses on "that name's taken too").
+function resolveAccount(username, password, color) {
+  return new Promise((resolve) => {
+    if (!ACCOUNTS_ENABLED) {
+      resolve({ token: '', username });
+      return;
+    }
+    (async function tryUsername(name) {
+      const check = await accountRequest('check', { username: name });
+
+      if (!check.ok) {
+        sys(`Account check failed (${check.status}): ${(check.data && check.data.error) || 'unknown error'}. Continuing without an account for now.`);
+        resolve({ token: '', username: name });
+        return;
+      }
+
+      if (!check.data.exists) {
+        const reg = await accountRequest('register', { username: name, password, color });
+        if (reg.ok) {
+          hideAccountModal();
+          resolve({ token: reg.data.token, username: name });
+          return;
+        }
+        if (reg.status === 409) {
+          // Genuine race: someone else grabbed it between check and register.
+          showConflictModal(name);
+        } else {
+          sys(`Registration failed (${reg.status}): ${(reg.data && reg.data.error) || 'unknown error'} ${(reg.data && reg.data.details) ? JSON.stringify(reg.data.details) : ''}. Continuing without an account for now.`);
+          resolve({ token: '', username: name });
+        }
+        return;
+      }
+
+      showConflictModal(name);
+
+      confirmPasswordBtn.onclick = async () => {
+        modalError.textContent = '';
+        const claim = await accountRequest('claim', { username: name, password: passwordInput.value });
+        if (claim.ok) {
+          hideAccountModal();
+          resolve({ token: claim.data.token, username: name });
+        } else if (claim.status === 403) {
+          modalError.textContent = claim.data.error || 'Incorrect password.';
+        } else {
+          modalError.textContent = `Server error (${claim.status}): ${(claim.data && claim.data.error) || 'unknown error'}`;
+        }
+      };
+
+      changeNameBtn.onclick = () => {
+        showChangeNameModal();
+        confirmPasswordBtn.onclick = () => {
+          const newName = newUsernameInput.value.trim();
+          if (!newName) return;
+          tryUsername(newName);
+        };
+        backBtn.onclick = () => showConflictModal(name);
+      };
+    })(username);
+  });
+}
+
+/* ---------------- Message history (Supabase, via the Vercel proxy) ---------------- */
+
+const MESSAGES_PATH = '/rest/v1/messages';
+
+async function supabaseRequest(path, method, payload) {
+  const r = await fetch('/api/proxy?service=supabase', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      path,
+      method,
+      body: payload ? JSON.stringify(payload) : undefined
+    })
+  });
+  return r.json();
+}
+
+async function saveMessage(username, color, body, recipientPeerId) {
+  try {
+    const result = await supabaseRequest(MESSAGES_PATH, 'POST', {
+      sender_peer_id: (peer && peer.id) || null,
+      recipient_peer_id: recipientPeerId || null,
+      username,
+      color: color || null,
+      body
+    });
+    if (result && result.error) {
+      sys('(message not saved: ' + result.error + ')');
+    }
+  } catch (e) {
+    console.error('Failed to save message', e);
+  }
+}
+
+async function loadHistory() {
+  try {
+    const rows = await supabaseRequest(MESSAGES_PATH + '?recipient_peer_id=not.is.null&order=created_at.desc&limit=50', 'GET');
+    if (!Array.isArray(rows)) return;
+    rows.reverse().forEach(row => {
+      const mine = peer && row.sender_peer_id === peer.id;
+      addMsg(row.username, row.body, mine ? 'from-calc' : 'from-peer');
+    });
+    if (rows.length) sys('Loaded ' + rows.length + ' earlier messages.');
+  } catch (e) {
+    console.error('Failed to load history', e);
+  }
+}
+
+/* ---------------- Storage (defensive -- falls back to in-memory if
+   localStorage isn't available in whatever context this page is opened) ---------------- */
+
+const memoryStore = {};
+const safeStorage = {
+  get(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw === null ? fallback : JSON.parse(raw);
+    } catch (e) {
+      return key in memoryStore ? memoryStore[key] : fallback;
+    }
+  },
+  set(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+      memoryStore[key] = value;
+    }
+  }
+};
+
+/* ---------------- Friends list ---------------- */
+
+function loadFriends() {
+  return safeStorage.get('netchat-friends', []);
+}
+
+function saveFriends(list) {
+  safeStorage.set('netchat-friends', list);
+}
+
+function renderFriends() {
+  const container = document.getElementById('friends-list');
+  const friends = loadFriends();
+  container.innerHTML = '';
+
+  if (!friends.length) {
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = 'No saved friends yet.';
+    container.appendChild(p);
+    return;
+  }
+
+  friends.forEach((f, i) => {
+    const row = document.createElement('div');
+    row.className = 'friend-row';
+
+    const name = document.createElement('span');
+    name.className = 'fname';
+    name.textContent = f.name;
+    row.appendChild(name);
+
+    const id = document.createElement('span');
+    id.className = 'fid';
+    id.textContent = f.id;
+    row.appendChild(id);
+
+    const connectBtn = document.createElement('button');
+    connectBtn.className = 'btn-ghost';
+    connectBtn.textContent = 'Connect';
+    connectBtn.addEventListener('click', () => {
+      sys('Connecting to ' + f.name + '...');
+      wireConnection(peer.connect(f.id));
+    });
+    row.appendChild(connectBtn);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'btn-remove';
+    removeBtn.textContent = '\u2715';
+    removeBtn.title = 'Remove';
+    removeBtn.addEventListener('click', () => {
+      const updated = loadFriends();
+      updated.splice(i, 1);
+      saveFriends(updated);
+      renderFriends();
+    });
+    row.appendChild(removeBtn);
+
+    container.appendChild(row);
+  });
+}
+
+/* ---------------- Chat mode (Direct Message vs Global) ---------------- */
+
+let chatMode = 'dm';
+let globalPollHandle = null;
+let lastGlobalId = 0;
+
+function switchTab(mode) {
+  chatMode = mode;
+  document.getElementById('tab-dm').classList.toggle('active', mode === 'dm');
+  document.getElementById('tab-global').classList.toggle('active', mode === 'global');
+  logEl.innerHTML = '';
+
+  if (mode === 'global') {
+    loadGlobalHistory();
+    if (!globalPollHandle) globalPollHandle = setInterval(pollGlobal, 4000);
+  } else {
+    if (globalPollHandle) { clearInterval(globalPollHandle); globalPollHandle = null; }
+    loadHistory();
+    sys('Direct message mode.');
+  }
+}
+
+async function loadGlobalHistory() {
+  try {
+    const rows = await supabaseRequest(MESSAGES_PATH + '?recipient_peer_id=is.null&order=created_at.asc&limit=50', 'GET');
+    if (!Array.isArray(rows)) return;
+    rows.forEach(row => {
+      const mine = peer && row.sender_peer_id === peer.id;
+      addMsg(row.username, row.body, mine ? 'from-calc' : 'from-peer');
+      if (row.id > lastGlobalId) lastGlobalId = row.id;
+    });
+  } catch (e) {
+    console.error('Failed to load global history', e);
+  }
+}
+
+async function pollGlobal() {
+  if (chatMode !== 'global') return;
+  try {
+    const rows = await supabaseRequest(MESSAGES_PATH + `?recipient_peer_id=is.null&id=gt.${lastGlobalId}&order=created_at.asc`, 'GET');
+    if (!Array.isArray(rows)) return;
+    rows.forEach(row => {
+      const mine = peer && row.sender_peer_id === peer.id;
+      addMsg(row.username, row.body, mine ? 'from-calc' : 'from-peer');
+      if (row.id > lastGlobalId) lastGlobalId = row.id;
+    });
+  } catch (e) {
+    console.error('Failed to poll global chat', e);
+  }
+}
+
+document.getElementById('tab-dm').addEventListener('click', () => switchTab('dm'));
+document.getElementById('tab-global').addEventListener('click', () => switchTab('global'));
+
+/* ---------------- Calculator link (raw WebUSB) ---------------- */
+
+function buildHandshakePayload(key) {
+  const strBytes = (key.length + 1) * 2;
+  const payload = new Uint8Array(strBytes);
+  payload[0] = strBytes & 0xFF;
+  payload[1] = 0x03;
+  for (let i = 0; i < key.length; i++) {
+    const code = key.charCodeAt(i);
+    payload[2 + i * 2] = code & 0xFF;
+    payload[2 + i * 2 + 1] = (code >> 8) & 0xFF;
+  }
+  return payload;
+}
+
+function setCalcConnected(state) {
+  calcConnected = state;
+  if (!state) accountReady = false;
+  updateCalcDot();
+}
+
+/* Three-state indicator: red = nothing attached, yellow = attached but the
+ * account/password hasn't been confirmed yet, green = signed in and ready
+ * to send. The USB handshake only proves the wire is up -- messaging stays
+ * blocked until the #CONFIG#/account flow has finished. */
+function updateCalcDot() {
+  calcDot.classList.remove('on', 'pending');
+  if (!calcConnected) {
+    calcStatus.textContent = 'Not connected';
+    return;
+  }
+  calcStatus.textContent = accountReady ? 'Signed in' : 'Waiting for login...';
+  calcDot.classList.add(accountReady ? 'on' : 'pending');
+}
+
+async function connectCalculator() {
+  try {
+    device = await navigator.usb.requestDevice({ filters: [{ vendorId: VENDOR_ID, productId: PRODUCT_ID }] });
+  } catch (e) {
+    sys('No device selected.');
+    return;
+  }
+
+  try {
+    await device.open();
+    if (device.configuration === null) {
+      await device.selectConfiguration(device.configurations[0].configurationValue);
+    }
+    const iface = device.configuration.interfaces[0];
+    await device.claimInterface(iface.interfaceNumber);
+    const alt = iface.alternate;
+    epOut = alt.endpoints.find(e => e.direction === 'out').endpointNumber;
+    epIn = alt.endpoints.find(e => e.direction === 'in').endpointNumber;
+
+    const result = await device.controlTransferOut({
+      requestType: 'vendor', recipient: 'device', request: 0xFF, value: 0, index: 0
+    }, buildHandshakePayload(LINKLIB_KEY));
+
+    if (result.status !== 'ok') throw new Error('Handshake failed: ' + result.status);
+
+    setCalcConnected(true);
+    sys('Calculator connected.');
+    pollReads();
+  } catch (e) {
+    sys('Connection failed: ' + e.message);
+    setCalcConnected(false);
+    console.error(e);
+  }
+}
+
+async function pollReads() {
+  while (calcConnected) {
+    try {
+      const result = await device.transferIn(epIn, 64);
+      if (result.data && result.data.byteLength > 0) {
+        recvBuffer += new TextDecoder().decode(new Uint8Array(result.data.buffer));
+        let idx;
+        while ((idx = recvBuffer.search(/[\r\n]/)) !== -1) {
+          const line = recvBuffer.slice(0, idx);
+          recvBuffer = recvBuffer.slice(idx + 1);
+          if (line.length) await handleCalcLine(line);
+        }
+      }
+    } catch (e) {
+      sys('Calculator disconnected.');
+      setCalcConnected(false);
+      break;
+    }
+  }
+}
+
+async function handleCalcLine(line) {
+  if (line.startsWith('#CONFIG#')) {
+    const params = new URLSearchParams(line.slice(8).replace(/;/g, '&'));
+    const username = params.get('username') || 'You';
+    const color = params.get('color') || '6c7cff';
+    const token = params.get('token') || '';
+    const password = params.get('password') || '';
+    const peerId = params.get('peer_id') || '';
+
+    let confirmed = { token, username };
+
+    if (ACCOUNTS_ENABLED && token) {
+      const { data } = await accountRequest('verify-token', { username, token });
+      if (!data.valid) {
+        sys('Device token no longer valid for this username, re-verifying...');
+        confirmed = await resolveAccount(username, password, color);
+      }
+    } else if (ACCOUNTS_ENABLED) {
+      confirmed = await resolveAccount(username, password, color);
+    }
+
+    // Resolve the Peer ID. The calculator owns it in its archive, but a
+    // peer_id set on the account row in Supabase overrides -- edit it there
+    // and the calc adopts it on its next connect.
+    let desiredPeerId = peerId;
+    let accountHadPeerId = false;
+    if (confirmed.token) {
+      const { data } = await accountRequest('get-peer', { username: confirmed.username, token: confirmed.token });
+      const storedPeerId = (data && data.peer_id || '').trim();
+      const valid = /^[A-Za-z0-9-]+$/.test(storedPeerId);
+      if (storedPeerId) {
+        accountHadPeerId = true;
+        if (valid) {
+          if (storedPeerId !== peerId) {
+            desiredPeerId = storedPeerId;
+            sendToCalc(`#SETPEER#${storedPeerId}`);
+          }
+        } else {
+          sys(`Account peer_id '${storedPeerId}' is invalid (letters/digits only); keeping the calc's ID.`);
+        }
+      }
+    }
+    if (!desiredPeerId) {
+      desiredPeerId = generateShortId();
+      sendToCalc(`#SETPEER#${desiredPeerId}`);
+    }
+    if (!peer) {
+      startPeerWithId(desiredPeerId, 5);
+    } else if (peer.id !== desiredPeerId) {
+      const old = peer;
+      peer = null;
+      try { old.destroy(); } catch (e) { /* ignore */ }
+      startPeerWithId(desiredPeerId, 5);
+    }
+
+    myUsername = confirmed.username;
+    myColor = color;
+    meName.textContent = myUsername;
+    meSwatch.style.background = '#' + myColor;
+    meSection.style.display = 'block';
+    sys(`Signed in as ${myUsername}.`);
+
+    // Account confirmed -> green. Without an account system there's nothing
+    // to log into, so a plain (tokenless) confirmation is enough then.
+    accountReady = !!(confirmed.token || !ACCOUNTS_ENABLED);
+    updateCalcDot();
+
+    if (confirmed.token && confirmed.token !== token) {
+      sendToCalc(`#SETID#${confirmed.token}`);
+    }
+    if (confirmed.username !== username) {
+      sendToCalc(`#SETNAME#${confirmed.username}`);
+    }
+
+    // Persist this device's Peer ID on the account row in Supabase only when
+    // the account doesn't already have one -- a manually-set Supabase value
+    // is never overwritten.
+    if (confirmed.token && desiredPeerId && !accountHadPeerId) {
+      savePeerToAccount(confirmed.username, confirmed.token, desiredPeerId);
+    }
+
+    // Ask the calc for its current background-image slot usage.
+    sendToCalc('#BGLIST#');
+    return;
+  }
+
+  if (line.startsWith('#PAL#')) {
+    const m = line.match(/^#PAL#(\d+)#(.*)$/);
+    if (m) {
+      imagePalette = m[2].split(',').filter(Boolean).map((s) => {
+        const [idxHex, rgb] = s.split(':');
+        return {
+          idx: parseInt(idxHex, 16),
+          r: parseInt(rgb.slice(0, 2), 16),
+          g: parseInt(rgb.slice(2, 4), 16),
+          b: parseInt(rgb.slice(4, 6), 16)
+        };
+      });
+    }
+    return;
+  }
+
+  if (line.startsWith('#BGSLOTS#')) {
+    const bm = line.slice(9);
+    for (let i = 0; i < BG_SLOTS; i++) slotBusy[i] = (bm[i] || '0') === '1';
+    renderBgSlotOptions();
+    return;
+  }
+
+  if (line.startsWith('#TYPING#')) {
+    if (conn && conn.open) conn.send({ type: 'typing', from: myUsername || 'You' });
+    return;
+  }
+
+  if (line === '#STOPTYPING#') {
+    if (conn && conn.open) conn.send({ type: 'stoptyping' });
+    return;
+  }
+
+  if (!accountReady) {
+    sys('Log in first: finish signing in on this site before sending from the calculator.');
+    return;
+  }
+
+  addMsg(myUsername || 'You', line, 'from-calc');
+
+  if (chatMode === 'global') {
+    saveMessage(myUsername || 'You', myColor, line, null);
+  } else {
+    saveMessage(myUsername || 'You', myColor, line, conn && conn.peer);
+    if (conn && conn.open) {
+      conn.send({ type: 'message', from: myUsername || 'You', color: myColor, text: line });
+    }
+  }
+}
+
+async function sendToCalc(text) {
+  if (!calcConnected) return;
+  const data = new TextEncoder().encode(text + '\n');
+  try {
+    await device.transferOut(epOut, data);
+  } catch (e) {
+    sys('Send to calculator failed: ' + e.message);
+    setCalcConnected(false);
+  }
+}
+
+/* ---------------- P2P (PeerJS) ---------------- */
+
+function setPeerConnected(state) {
+  peerDot.classList.toggle('on', state);
+  peerStatus.textContent = state ? 'Connected' : 'Not connected';
+}
+
+function wireConnection(c) {
+  conn = c;
+  conn.on('open', () => {
+    setPeerConnected(true);
+    sys('Direct connection established.');
+  });
+  conn.on('data', (data) => {
+    if (!data || !data.type) return;
+
+    if (data.type === 'typing') {
+      document.getElementById('typing-indicator').style.visibility = 'visible';
+      sendToCalc(`#TYPING#${data.from}`);
+      return;
+    }
+
+    if (data.type === 'stoptyping') {
+      document.getElementById('typing-indicator').style.visibility = 'hidden';
+      sendToCalc('#STOPTYPING#');
+      return;
+    }
+
+    const from = data.from || 'Friend';
+    const text = data.text || '';
+    const color = data.color;
+    document.getElementById('typing-indicator').style.visibility = 'hidden';
+    addMsg(from, text, 'from-peer');
+    saveMessage(from, color, text, conn.peer);
+    sendToCalc(`${from}: ${text}`);
+  });
+  conn.on('close', () => {
+    setPeerConnected(false);
+    sys('Direct connection closed.');
+  });
+  conn.on('error', (e) => {
+    sys('P2P error: ' + e);
+  });
+}
+
+// Avoids visually ambiguous characters (0/O, 1/I/L).
+const ID_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+function generateShortId() {
+  let code = '';
+  for (let i = 0; i < 5; i++) {
+    code += ID_CHARS[Math.floor(Math.random() * ID_CHARS.length)];
+  }
+  return code;
+}
+
+function startPeerWithId(id, attemptsLeft) {
+  const candidate = new Peer(id);
+
+  candidate.on('open', (openedId) => {
+    peer = candidate;
+    myPeerIdInput.value = openedId;
+    safeStorage.set('netchat-peer-id', openedId);
+    loadHistory();
+  });
+
+  candidate.on('connection', (c) => {
+    sys('Incoming connection...');
+    wireConnection(c);
+  });
+
+  candidate.on('error', (e) => {
+    if (e.type === 'unavailable-id' && attemptsLeft > 0) {
+      candidate.destroy();
+      sys('Peer ID taken, assigning a new one...');
+      const fresh = generateShortId();
+      sendToCalc(`#SETPEER#${fresh}`);
+      safeStorage.set('netchat-peer-id', fresh);
+      startPeerWithId(fresh, attemptsLeft - 1);
+      return;
+    }
+    sys('Peer error: ' + e.type);
+  });
+}
+
+document.getElementById('connect-peer').addEventListener('click', () => {
+  const id = document.getElementById('friend-id').value.trim();
+  if (!id || !peer) return;
+  sys('Connecting to ' + id + '...');
+  wireConnection(peer.connect(id));
+});
+
+document.getElementById('save-friend').addEventListener('click', () => {
+  const id = document.getElementById('friend-id').value.trim();
+  const name = document.getElementById('friend-name').value.trim();
+  if (!id || !name) {
+    sys('Enter both a nickname and an ID to save a friend.');
+    return;
+  }
+  const friends = loadFriends();
+  friends.push({ id, name });
+  saveFriends(friends);
+  renderFriends();
+  document.getElementById('friend-name').value = '';
+  sys('Saved ' + name + '.');
+});
+
+document.getElementById('copy-id').addEventListener('click', () => {
+  myPeerIdInput.select();
+  navigator.clipboard.writeText(myPeerIdInput.value).catch(() => {});
+});
+
+/* ---------------- Background image upload ---------------- */
+
+function renderBgSlotOptions() {
+  const sel = document.getElementById('bg-slot');
+  const cur = sel.value;
+  sel.innerHTML = '';
+  for (let i = 0; i < BG_SLOTS; i++) {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = slotBusy[i] ? `Slot ${i} (in use)` : `Slot ${i} (free)`;
+    sel.appendChild(opt);
+  }
+  if (cur) sel.value = cur;
+}
+
+function sanitizeBgName(filename) {
+  const base = filename.replace(/\.[^.]+$/, '').replace(/[^\w .-]/g, '').trim();
+  return (base || 'image').slice(0, 16);
+}
+
+/* Scales the image to 320x240 (cover-fit, letterboxed with black) and maps
+ * every pixel to the nearest color in the calc's fixed image palette. */
+function processImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 320;
+      canvas.height = 240;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, 320, 240);
+      const scale = Math.max(320 / img.width, 240 / img.height);
+      const w = img.width * scale, h = img.height * scale;
+      ctx.drawImage(img, (320 - w) / 2, (240 - h) / 2, w, h);
+      const data = ctx.getImageData(0, 0, 320, 240).data;
+      const pal = imagePalette;
+      const out = new Uint8Array(320 * 240);
+      for (let p = 0, o = 0; p < data.length; p += 4, o++) {
+        let best = 0, bestD = Infinity;
+        const pr = data[p], pg = data[p + 1], pb = data[p + 2];
+        for (let i = 0; i < pal.length; i++) {
+          const dr = pr - pal[i].r, dg = pg - pal[i].g, db = pb - pal[i].b;
+          const d = dr * dr + dg * dg + db * db;
+          if (d < bestD) { bestD = d; best = i; }
+        }
+        out[o] = pal[best].idx;
+      }
+      URL.revokeObjectURL(url);
+      resolve(out);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not load image')); };
+    img.src = url;
+  });
+}
+
+async function transferImage(slot, name, bytes) {
+  uploadActive = true;
+  const status = document.getElementById('bg-status');
+  status.textContent = 'Sending to calculator...';
+  try {
+    await sendToCalc(`#BGIMG#${slot}|${name}`);
+    for (let off = 0; off < bytes.length; off += BG_CHUNK) {
+      const chunk = bytes.subarray(off, Math.min(off + BG_CHUNK, bytes.length));
+      let hex = '';
+      for (let i = 0; i < chunk.length; i++) hex += chunk[i].toString(16).padStart(2, '0');
+      await sendToCalc('#BGDATA#' + hex);
+      await sleep(8);
+      const pct = Math.min(100, Math.round((off + chunk.length) / bytes.length * 100));
+      status.textContent = `Sending... ${pct}%`;
+    }
+    await sendToCalc('#BGEND#');
+    slotBusy[slot] = true;
+    renderBgSlotOptions();
+    status.textContent = 'Done. Set it in calc Settings > 8: Background image.';
+    sys(`Background image sent to slot ${slot}.`);
+  } catch (e) {
+    status.textContent = 'Upload failed.';
+    sys('Upload failed: ' + e.message);
+    sendToCalc('#BGCANCEL#').catch(() => {});
+  } finally {
+    uploadActive = false;
+  }
+}
+
+async function uploadBackground() {
+  if (uploadActive) { sys('Upload already in progress.'); return; }
+  if (!accountReady) { sys('Log in first: finish signing in before uploading.'); return; }
+  if (!calcConnected) { sys('Calculator not connected.'); return; }
+  if (!imagePalette) { sys('Palette not loaded yet. Reconnect the calculator and try again.'); return; }
+  const slot = parseInt(document.getElementById('bg-slot').value, 10);
+  const file = document.getElementById('bg-file').files[0];
+  if (!file) { sys('Choose an image file first.'); return; }
+
+  sys(`Processing ${file.name}...`);
+  const bytes = await processImage(file);
+  if (uploadActive) return; /* user may have started another upload meanwhile */
+  const name = sanitizeBgName(file.name);
+  await transferImage(slot, name, bytes);
+}
+
+/* ---------------- Composer ---------------- */
+
+function sendFromComposer() {
+  const input = document.getElementById('msg');
+  const text = input.value.trim();
+  if (!text) return;
+  if (uploadActive) {
+    sys('Background image upload in progress.');
+    return;
+  }
+  if (!accountReady) {
+    sys('Log in first: finish signing in (enter your password if prompted) before sending.');
+    return;
+  }
+  input.value = '';
+
+  addMsg(myUsername || 'You', text, 'from-calc');
+  sendToCalc('#SENT#' + text);
+
+  if (chatMode === 'global') {
+    saveMessage(myUsername || 'You', myColor, text, null);
+  } else {
+    saveMessage(myUsername || 'You', myColor, text, conn && conn.peer);
+    if (conn && conn.open) {
+      conn.send({ type: 'message', from: myUsername || 'You', color: myColor, text });
+    }
+  }
+}
+
+document.getElementById('send').addEventListener('click', sendFromComposer);
+document.getElementById('msg').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendFromComposer();
+});
+
+document.getElementById('connect-calc').addEventListener('click', connectCalculator);
+
+document.getElementById('bg-upload').addEventListener('click', () => {
+  document.getElementById('bg-file').click();
+});
+document.getElementById('bg-file').addEventListener('change', uploadBackground);
+
+navigator.usb.addEventListener('disconnect', (e) => {
+  if (device && e.device === device) {
+    setCalcConnected(false);
+    sys('Calculator unplugged.');
+  }
+});
+
+
+renderBgSlotOptions();
+renderFriends();
+</script>
+</body>
+</html>

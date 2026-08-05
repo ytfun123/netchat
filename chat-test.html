@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>netchat link test</title>
+<style>
+  body { font-family: sans-serif; max-width: 500px; margin: 2em auto; padding: 0 1em; }
+  #status { padding: 0.6em 1em; border-radius: 6px; margin-bottom: 1em; font-weight: bold; }
+  #status.disconnected { background: #fdd; color: #900; }
+  #status.connected { background: #dfd; color: #060; }
+  #log { border: 1px solid #ccc; border-radius: 6px; height: 260px; overflow-y: auto; padding: 0.6em; font-family: monospace; font-size: 0.9em; margin-bottom: 0.6em; }
+  #log div.recv { color: #060; }
+  #log div.sent { color: #06c; }
+  #log div.sys { color: #999; font-style: italic; }
+  form { display: flex; gap: 0.4em; }
+  input[type=text] { flex: 1; padding: 0.5em; }
+  button { padding: 0.5em 1em; cursor: pointer; }
+</style>
+</head>
+<body>
+  <h1>netchat link test</h1>
+  <p id="status" class="disconnected">Not connected</p>
+  <button id="connect">Connect calculator</button>
+  <div id="log"></div>
+  <form id="send-form">
+    <input type="text" id="msg" placeholder="Type a message..." disabled>
+    <button type="submit" id="send" disabled>Send</button>
+  </form>
+
+<script>
+const VENDOR_ID = 0x0451;
+const PRODUCT_ID = 0xE008;
+const LINKLIB_KEY = "netcalc-chat-v1";
+const INTERFACE_NUMBER = 0; // fallback only; actual number is read from the device
+let epOut = null;
+let epIn = null;
+
+let device = null;
+let connected = false;
+let recvBuffer = "";
+
+const statusEl = document.getElementById('status');
+const logEl = document.getElementById('log');
+const connectBtn = document.getElementById('connect');
+const form = document.getElementById('send-form');
+const msgInput = document.getElementById('msg');
+const sendBtn = document.getElementById('send');
+
+function log(text, cls) {
+  const div = document.createElement('div');
+  div.className = cls;
+  div.textContent = text;
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function setConnected(state) {
+  connected = state;
+  statusEl.textContent = state ? 'Connected' : 'Not connected';
+  statusEl.className = state ? 'connected' : 'disconnected';
+  msgInput.disabled = !state;
+  sendBtn.disabled = !state;
+}
+
+// Builds the exact 32-byte handshake payload the calculator's
+// check_host_key() expects: [bLength][bDescriptorType][UTF-16LE string,
+// no null terminator] -- see linklib.c for why it's shaped this way.
+function buildHandshakePayload(key) {
+  const strBytes = (key.length + 1) * 2; // matches sizeof(L"" KEY) on-calc, incl. null terminator
+  const payload = new Uint8Array(strBytes);
+  payload[0] = strBytes & 0xFF;          // key.bLength
+  payload[1] = 0x03;                     // USB_STRING_DESCRIPTOR
+  for (let i = 0; i < key.length; i++) {
+    const code = key.charCodeAt(i);
+    payload[2 + i * 2] = code & 0xFF;
+    payload[2 + i * 2 + 1] = (code >> 8) & 0xFF;
+  }
+  // Remaining 2 bytes (the null terminator slot) stay zero, matching the
+  // on-calc comparison window which only covers 32 bytes total anyway.
+  return payload;
+}
+
+async function connectCalculator() {
+  try {
+    device = await navigator.usb.requestDevice({
+      filters: [{ vendorId: VENDOR_ID, productId: PRODUCT_ID }]
+    });
+  } catch (e) {
+    log('No device selected.', 'sys');
+    return;
+  }
+
+  try {
+    await device.open();
+
+    if (device.configuration === null) {
+      const configValue = device.configurations[0].configurationValue;
+      await device.selectConfiguration(configValue);
+    }
+
+    const iface = device.configuration.interfaces[0];
+    const interfaceNumber = iface.interfaceNumber;
+    await device.claimInterface(interfaceNumber);
+
+    const alt = iface.alternate;
+    console.log('Claimed interface', interfaceNumber, 'endpoints:', alt.endpoints);
+    log(`Interface ${interfaceNumber}, endpoints: ` +
+        alt.endpoints.map(e => `#${e.endpointNumber} ${e.direction}`).join(', '), 'sys');
+
+    epOut = alt.endpoints.find(e => e.direction === 'out').endpointNumber;
+    epIn = alt.endpoints.find(e => e.direction === 'in').endpointNumber;
+
+    const payload = buildHandshakePayload(LINKLIB_KEY);
+    const result = await device.controlTransferOut({
+      requestType: 'vendor',
+      recipient: 'device',
+      request: 0xFF,
+      value: 0x0000,
+      index: 0x0000
+    }, payload);
+
+    if (result.status !== 'ok') {
+      throw new Error('Handshake control transfer failed: ' + result.status);
+    }
+
+    setConnected(true);
+    log('-- connected --', 'sys');
+    pollReads();
+  } catch (e) {
+    log('Connection failed: ' + e.message, 'sys');
+    setConnected(false);
+    console.error(e);
+  }
+}
+
+async function pollReads() {
+  while (connected) {
+    try {
+      const result = await device.transferIn(epIn, 64);
+      if (result.data && result.data.byteLength > 0) {
+        const bytes = new Uint8Array(result.data.buffer);
+        recvBuffer += new TextDecoder().decode(bytes);
+        let idx;
+        while ((idx = recvBuffer.search(/[\r\n]/)) !== -1) {
+          const line = recvBuffer.slice(0, idx);
+          recvBuffer = recvBuffer.slice(idx + 1);
+          if (line.length) log('< ' + line, 'recv');
+        }
+      }
+    } catch (e) {
+      log('Read error / disconnected: ' + e.message, 'sys');
+      setConnected(false);
+      break;
+    }
+  }
+}
+
+async function sendMessage(text) {
+  const data = new TextEncoder().encode(text + '\n');
+  try {
+    await device.transferOut(epOut, data);
+    log('> ' + text, 'sent');
+  } catch (e) {
+    log('Send error: ' + e.message, 'sys');
+    setConnected(false);
+  }
+}
+
+connectBtn.addEventListener('click', connectCalculator);
+
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = msgInput.value.trim();
+  if (!text || !connected) return;
+  sendMessage(text);
+  msgInput.value = '';
+});
+
+navigator.usb.addEventListener('disconnect', (e) => {
+  if (device && e.device === device) {
+    setConnected(false);
+    log('-- calculator unplugged --', 'sys');
+  }
+});
+</script>
+</body>
+</html>
